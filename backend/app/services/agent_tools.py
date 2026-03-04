@@ -202,13 +202,34 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the internet for real-time information. Useful for finding news, technical docs, product info, and latest data. Returns search result titles, links, and snippets.",
+            "description": "Search the internet via DuckDuckGo for real-time information. Note: may be slow or unavailable on some networks. Use bing_search as an alternative.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
                         "description": "Search keywords, e.g. 'Python asyncio tutorial' or 'AI industry trends 2026'",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Number of results to return, default 5, max 10",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bing_search",
+            "description": "Search the internet via Bing for real-time information. Works reliably in China and worldwide. Useful for news, technical docs, product info, and latest data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search keywords, e.g. 'Python asyncio tutorial' or '北京天气'",
                     },
                     "max_results": {
                         "type": "integer",
@@ -512,6 +533,8 @@ async def execute_tool(
             result = await _send_message_to_agent(agent_id, arguments)
         elif tool_name == "web_search":
             result = await _web_search(arguments)
+        elif tool_name == "bing_search":
+            result = await _bing_search(arguments)
         elif tool_name == "plaza_get_new_posts":
             result = await _plaza_get_new_posts(arguments)
         elif tool_name == "plaza_create_post":
@@ -611,7 +634,58 @@ async def _search_duckduckgo(query: str, max_results: int) -> str:
 
     if not results:
         return f'🔍 No results found for "{query}"'
-    return f'🔍 Search results for "{query}" ({len(results)} items):\n\n' + "\n\n---\n\n".join(results)
+    return f'🔍 DuckDuckGo results for "{query}" ({len(results)} items):\n\n' + "\n\n---\n\n".join(results)
+
+
+async def _bing_search(arguments: dict) -> str:
+    """Search via Bing HTML (free, no API key, works in China)."""
+    import httpx, re
+    from html import unescape
+
+    query = arguments.get("query", "")
+    if not query:
+        return "❌ Please provide search keywords"
+
+    max_results = min(arguments.get("max_results", 5), 10)
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            resp = await client.get(
+                "https://www.bing.com/search",
+                params={"q": query, "count": max_results * 2, "setlang": "zh-CN"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                },
+                timeout=15,
+            )
+
+        # Extract results from Bing HTML
+        results = []
+        # Main result blocks: <li class="b_algo">
+        blocks = re.findall(r'<li class="b_algo".*?</li>', resp.text, re.DOTALL)
+        for block in blocks[:max_results]:
+            # Title & URL
+            title_m = re.search(r'<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, re.DOTALL)
+            # Snippet
+            snippet_m = re.search(r'<p[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</p>', block, re.DOTALL)
+            if not snippet_m:
+                snippet_m = re.search(r'<p>(.*?)</p>', block, re.DOTALL)
+            if title_m:
+                url = title_m.group(1)
+                title = re.sub(r'<[^>]+>', '', title_m.group(2)).strip()
+                title = unescape(title)
+                snippet = ""
+                if snippet_m:
+                    snippet = re.sub(r'<[^>]+>', '', snippet_m.group(1)).strip()
+                    snippet = unescape(snippet)
+                results.append(f"**{title}**\n{url}\n{snippet}")
+
+        if not results:
+            return f'🔍 No Bing results found for "{query}"'
+        return f'🔍 Bing results for "{query}" ({len(results)} items):\n\n' + "\n\n---\n\n".join(results)
+    except Exception as e:
+        return f"❌ Bing search error: {str(e)[:200]}"
 
 
 async def _search_tavily(query: str, api_key: str, max_results: int) -> str:

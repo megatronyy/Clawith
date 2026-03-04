@@ -155,10 +155,10 @@ BUILTIN_TOOLS = [
     },
     {
         "name": "web_search",
-        "display_name": "Web Search",
-        "description": "Search the internet for real-time information. Useful for finding news, technical docs, and latest data.",
+        "display_name": "DuckDuckGo Search",
+        "description": "Search the internet via DuckDuckGo. May be unavailable on some networks. Use Bing Search as an alternative.",
         "category": "search",
-        "icon": "🔍",
+        "icon": "🦆",
         "is_default": True,
         "parameters_schema": {
             "type": "object",
@@ -184,7 +184,7 @@ BUILTIN_TOOLS = [
                         {"value": "duckduckgo", "label": "DuckDuckGo (free, no API key)"},
                         {"value": "tavily", "label": "Tavily (AI search, needs API key)"},
                         {"value": "google", "label": "Google Custom Search (needs API key)"},
-                        {"value": "bing", "label": "Bing Search (needs API key)"},
+                        {"value": "bing", "label": "Bing Search API (needs API key)"},
                     ],
                     "default": "duckduckgo",
                 },
@@ -217,6 +217,24 @@ BUILTIN_TOOLS = [
                 },
             ]
         },
+    },
+    {
+        "name": "bing_search",
+        "display_name": "Bing Search",
+        "description": "Search the internet via Bing. Works reliably in China and worldwide. No API key required.",
+        "category": "search",
+        "icon": "🔍",
+        "is_default": True,
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search keywords"},
+                "max_results": {"type": "integer", "description": "Number of results to return (default 5, max 10)"},
+            },
+            "required": ["query"],
+        },
+        "config": {},
+        "config_schema": {},
     },
     {
         "name": "plaza_get_new_posts",
