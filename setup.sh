@@ -18,6 +18,18 @@ get_server_ip() {
     echo "$ip"
 }
 
+# --- Helper: detect China network (slow PyPI) ---
+IN_CHINA=false
+if ! curl -s --connect-timeout 2 -m 3 https://pypi.org >/dev/null 2>&1; then
+    IN_CHINA=true
+fi
+PIP_MIRROR=""
+NPM_MIRROR=""
+if [ "$IN_CHINA" = true ]; then
+    PIP_MIRROR="-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
+    NPM_MIRROR="--registry https://registry.npmmirror.com"
+fi
+
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════${NC}"
 echo -e "${CYAN}  🦞 Clawith — First-time Setup${NC}"
@@ -332,7 +344,7 @@ if [ ! -d ".venv" ]; then
 fi
 
 echo "  Installing dependencies..."
-if .venv/bin/pip install -e ".[dev]" 2>&1 | tail -5; then
+if .venv/bin/pip install -e ".[dev]" $PIP_MIRROR 2>&1 | tail -5; then
     echo -e "  ${GREEN}✓${NC} Backend dependencies installed"
 else
     echo -e "  ${RED}✗${NC} Failed to install backend dependencies."
@@ -347,7 +359,7 @@ cd "$ROOT/frontend"
 
 if [ ! -d "node_modules" ]; then
     echo "  Installing npm packages..."
-    npm install --silent 2>&1 | tail -1
+    npm install --silent $NPM_MIRROR 2>&1 | tail -1
 fi
 echo -e "  ${GREEN}✓${NC} Frontend dependencies installed"
 
