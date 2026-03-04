@@ -8,6 +8,14 @@ set -e
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
+# Parse arguments
+INSTALL_DEV=false
+for arg in "$@"; do
+    case $arg in
+        --dev) INSTALL_DEV=true ;;
+    esac
+done
+
 # --- Helper: detect server IP ---
 get_server_ip() {
     # Try hostname -I (Linux), then ifconfig (macOS), then fallback
@@ -335,12 +343,18 @@ if [ ! -d ".venv" ]; then
     echo -e "  ${GREEN}✓${NC} Virtual environment created"
 fi
 
-echo "  Installing dependencies (this may take 1-3 minutes)..."
-if .venv/bin/pip install -e ".[dev]" $PIP_MIRROR 2>&1; then
+if [ "$INSTALL_DEV" = true ]; then
+    PIP_TARGET=".[dev]"
+    echo "  Installing dependencies with dev extras (this may take 2-5 minutes)..."
+else
+    PIP_TARGET="."
+    echo "  Installing dependencies (this may take 1-2 minutes)..."
+fi
+if .venv/bin/pip install -e "$PIP_TARGET" $PIP_MIRROR 2>&1; then
     echo -e "  ${GREEN}✓${NC} Backend dependencies installed"
 else
     echo -e "  ${RED}✗${NC} Failed to install backend dependencies."
-    echo "  Try manually: cd backend && .venv/bin/pip install -e '.[dev]'"
+    echo "  Try manually: cd backend && .venv/bin/pip install -e '$PIP_TARGET'"
     exit 1
 fi
 
