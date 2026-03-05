@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
+    # Jina AI (Reader + Search APIs)
+    JINA_API_KEY: str = ""
+
     model_config = {
         "env_file": [".env", "../.env"],
         "env_file_encoding": "utf-8",

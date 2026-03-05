@@ -402,7 +402,7 @@
     "title": "Enterprise Settings",
     "tabs": {
       "llm": "Model Pool",
-      "tools": "Tool Management",
+      "tools": "Tools",
       "org": "Org Structure",
       "info": "Company Management",
       "audit": "Audit Log",
