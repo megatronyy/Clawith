@@ -125,10 +125,10 @@ function markdownToHtml(md: string): string {
                 inTable = true;
                 tableHeader = false;
                 // This is the header row
-                html += '<tr>' + cols.map(c => `<th style="border:1px solid var(--border-color);padding:6px 10px;background:var(--bg-secondary);text-align:left;font-weight:600">${renderInline(c)}</th>`).join('') + '</tr>';
+                html += '<tr>' + cols.map(c => `<th style="border:1px solid rgba(128,128,128,0.4);padding:6px 10px;background:var(--bg-secondary);text-align:left;font-weight:600">${renderInline(c)}</th>`).join('') + '</tr>';
                 html += '</thead><tbody>';
             } else {
-                html += '<tr>' + cols.map(c => `<td style="border:1px solid var(--border-color);padding:6px 10px">${renderInline(c)}</td>`).join('') + '</tr>';
+                html += '<tr>' + cols.map(c => `<td style="border:1px solid rgba(128,128,128,0.4);padding:6px 10px">${renderInline(c)}</td>`).join('') + '</tr>';
             }
             continue;
         } else if (inTable) {
