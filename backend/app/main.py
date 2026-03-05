@@ -18,23 +18,19 @@ async def _start_ss_local() -> None:
     if not shutil.which("ss-local"):
         print("[Proxy] ss-local not found — Discord proxy disabled", flush=True)
         return
-    nodes = [
-        # Priority order: Macau, Taiwan, Thailand, Indonesia, Netherlands
-        {"server": os.environ.get("SS_SERVER", "maca.domndd.blog"),
-         "port": int(os.environ.get("SS_PORT", "12991")),
-         "password": os.environ.get("SS_PASSWORD", "f2de98b1-2621-4566-9ace-0d24774c9ae3"),
-         "method": os.environ.get("SS_METHOD", "chacha20-ietf-poly1305"), "label": "Macau-1"},
-        {"server": "maca.domndd.blog", "port": 12993, "password": "f2de98b1-2621-4566-9ace-0d24774c9ae3",
-         "method": "chacha20-ietf-poly1305", "label": "Macau-2"},
-        {"server": "tw.domndd.blog",  "port": 19042, "password": "f2de98b1-2621-4566-9ace-0d24774c9ae3",
-         "method": "chacha20-ietf-poly1305", "label": "Taiwan"},
-        {"server": "th.ndnddm.pro",  "port": 36048, "password": "f2de98b1-2621-4566-9ace-0d24774c9ae3",
-         "method": "aes-128-gcm", "label": "Thailand"},
-        {"server": "ind.ndnddm.pro", "port": 22321, "password": "f2de98b1-2621-4566-9ace-0d24774c9ae3",
-         "method": "chacha20-ietf-poly1305", "label": "Indonesia"},
-        {"server": "eur.ndnddm.pro", "port": 47497, "password": "f2de98b1-2621-4566-9ace-0d24774c9ae3",
-         "method": "aes-128-gcm", "label": "Netherlands"},
-    ]
+    # Load nodes from environment variables (SS_NODES is a JSON array, or fallback to SS_SERVER/SS_PORT/etc.)
+    _pw = os.environ.get("SS_PASSWORD", "")
+    _method = os.environ.get("SS_METHOD", "chacha20-ietf-poly1305")
+    nodes_json = os.environ.get("SS_NODES", "")
+    if nodes_json:
+        import json as _json
+        nodes = _json.loads(nodes_json)
+    elif os.environ.get("SS_SERVER") and _pw:
+        nodes = [{"server": os.environ["SS_SERVER"], "port": int(os.environ.get("SS_PORT", "1080")),
+                  "password": _pw, "method": _method, "label": "primary"}]
+    else:
+        print("[Proxy] SS_NODES or SS_SERVER env var not set — skipping proxy setup", flush=True)
+        return
     for node in nodes:
         cfg = {"server": node["server"], "server_port": node["port"], "local_address": "127.0.0.1",
                "local_port": 1080, "password": node["password"], "method": node["method"], "timeout": 10}
