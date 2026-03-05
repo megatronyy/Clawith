@@ -1574,8 +1574,8 @@ export default function AgentDetail() {
                                                                 </summary>
                                                                 {msg.toolResult && (
                                                                     <div style={{ padding: '4px 10px 8px' }}>
-                                                                        <div style={{ color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '120px', overflow: 'auto', background: 'rgba(0,0,0,0.15)', borderRadius: '4px', padding: '4px 6px' }}>
-                                                                            {msg.toolResult.slice(0, 500)}
+                                                                        <div style={{ color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '240px', overflow: 'auto', background: 'rgba(0,0,0,0.15)', borderRadius: '4px', padding: '4px 6px' }}>
+                                                                            {msg.toolResult}
                                                                         </div>
                                                                     </div>
                                                                 )}
