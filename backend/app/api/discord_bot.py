@@ -150,7 +150,8 @@ async def _register_slash_commands(application_id: str, bot_token: str) -> dict:
         ],
     }
     url = f"https://discord.com/api/v10/applications/{application_id}/commands"
-    async with httpx.AsyncClient(timeout=15) as client:
+    proxy = os.environ.get("DISCORD_PROXY") or os.environ.get("HTTPS_PROXY") or None
+    async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
         resp = await client.put(
             url,
             headers={"Authorization": f"Bot {bot_token}", "Content-Type": "application/json"},
@@ -183,7 +184,8 @@ async def _send_discord_followup(application_id: str, bot_token: str, interactio
     """Send follow-up message(s) to Discord Interactions, chunked at 2000 chars."""
     import httpx
     chunks = [text[i:i + DISCORD_MSG_LIMIT] for i in range(0, len(text), DISCORD_MSG_LIMIT)]
-    async with httpx.AsyncClient(timeout=10) as client:
+    proxy = os.environ.get("DISCORD_PROXY") or os.environ.get("HTTPS_PROXY") or None
+    async with httpx.AsyncClient(timeout=10, proxy=proxy) as client:
         for i, chunk in enumerate(chunks):
             if i == 0:
                 # Edit the original deferred response
