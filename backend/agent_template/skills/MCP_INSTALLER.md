@@ -11,65 +11,72 @@ Use this skill when a user wants to add a new tool or integration (e.g., Gmail, 
 ```
 discover_resources(query="<what the user wants>", max_results=5)
 ```
-Show the results and let the user pick. Note the `ID` field (e.g. `anthropic/brave-search`).
+Show the results and let the user pick. Note the `ID` field (e.g. `github`).
 
-### Step 2 — Check if config is required
-Look at the tool's homepage or description for required parameters (API keys, tokens, etc.).
-- **Remote tools** (🌐): can be imported directly, but often still need API keys
-- **Local tools** (💻): require local installation — inform the user these cannot be imported automatically
+### Step 2 — Check Smithery API Key
+Before importing, check if you have a Smithery API Key configured. If not, guide the user:
+> "要导入 MCP 工具，需要一个 Smithery API Key。请按以下步骤操作：
+> 1. 注册/登录 https://smithery.ai
+> 2. 前往 https://smithery.ai/account/api-keys 创建 Key
+> 3. 将 Key 提供给我"
 
-### Step 3 — Ask for required config (if any)
-Ask the user clearly for any required credential. Example:
-> "To import Brave Search, I need your Brave API key. You can get it at: https://api.search.brave.com/ — please share it and I'll configure the tool immediately."
+**Important:** Only the Smithery API Key is needed. Do NOT ask users for individual tool tokens (e.g. GitHub PAT, Brave API key). Smithery handles tool authentication via OAuth.
 
-**Important rules:**
-- Ask for ONE credential at a time
-- Never repeat the key back in your response after receiving it
-- Do NOT ask the user to "go to Settings" — handle it directly in chat
-
-### Step 4 — Import with config
-Once you have the key:
+### Step 3 — Import the tool
+Once you have the Smithery API Key (or it's already configured):
 ```
 import_mcp_server(
   server_id="<qualified_name>",
-  config={"api_key": "<the key they provided>"}
+  config={"smithery_api_key": "<the key they provided>"}
 )
 ```
-The key is passed as a function parameter and stored securely in the database. It will NOT appear in your response.
+- On the **first import**, include `smithery_api_key` in config
+- On **subsequent imports** (key already stored), just pass `server_id`:
+```
+import_mcp_server(server_id="<qualified_name>")
+```
+
+### Step 4 — Handle OAuth Authorization (if needed)
+Some tools (like GitHub) require OAuth authorization. The import will return an authorization URL:
+> 🔐 **OAuth 授权需要**: 请在浏览器中访问以下链接完成授权：
+> https://api.smithery.ai/connect/...
+
+Tell the user to visit the link and authorize. Once done, the tools are ready.
 
 ### Step 5 — Confirm and demonstrate
-After successful import, confirm the tool is available and offer an immediate test:
-> "✅ Brave Search is now installed and configured. Want me to try a search right now?"
+After successful import (and OAuth if applicable):
+> "✅ GitHub 工具已安装。需要我帮你试一下吗？"
 
 ---
 
-## Common Config Parameter Names by Tool Type
+## Authentication Flow Summary
 
-| Tool Type | Common Config Keys |
-|---|---|
-| Search APIs | `api_key`, `subscription_key` |
-| Email (Gmail, Outlook) | `access_token`, `client_id`, `client_secret` |
-| GitHub | `token`, `personal_access_token` |
-| Notion | `api_key`, `integration_token` |
-| Slack | `bot_token` |
-| Database tools | `connection_string`, `host`, `port`, `username`, `password` |
-| Weather APIs | `api_key` |
+| Step | What Happens |
+|------|-------------|
+| 1. Smithery Key | User provides once, stored per-agent |
+| 2. Import | System auto-creates Smithery namespace + connection |
+| 3. OAuth | Some tools return auth URL — user visits to authorize |
+| 4. Ready | Tools work via Smithery Connect, no individual tokens needed |
 
-> **When unsure**, tell the user the tool's homepage URL and ask them to check the "required configuration" section, then come back with the values.
+> **Key principle:** Only ONE key (Smithery API Key) is needed. Individual tool tokens (GitHub PAT, Brave API key, etc.) are NOT required — OAuth handles this automatically through Smithery Connect.
 
 ---
 
-## Handling Config Update Requests
-If the user wants to update an existing tool's API key (e.g., key expired):
+## Handling Config for Non-OAuth Tools
+Some tools use API keys directly (passed as headers through Smithery Connect). For these, import with both the Smithery key and the tool-specific key:
 ```
-import_mcp_server(server_id="<same server_id>", config={"api_key": "<new key>"})
+import_mcp_server(
+  server_id="anthropic/brave-search",
+  config={"smithery_api_key": "<smithery key>", "BRAVE_API_KEY": "<brave key>"}
+)
 ```
-This will update the existing tool's config without creating a duplicate.
+The tool description will indicate if a specific API key is required.
 
 ---
 
 ## What NOT to Do
-- ❌ Don't tell users to go to the Tools settings page to enter keys — do it here
-- ❌ Don't echo API keys back to users in your response
+- ❌ Don't ask users for GitHub PAT, Notion API key, etc. — Smithery OAuth handles these
+- ❌ Don't tell users to go to the Tools settings page — do it here in chat
+- ❌ Don't echo API keys back in your response
 - ❌ Don't skip the search step — always verify the server exists before importing
 - ❌ Don't import local-only tools (without remote support) — inform users instead
