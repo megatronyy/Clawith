@@ -963,23 +963,40 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict, agent_id=None) -> s
 async def _execute_via_smithery_connect(mcp_url: str, tool_name: str, arguments: dict, config: dict) -> str:
     """Execute an MCP tool via Smithery Connect API.
 
-    Flow:
-    1. Create/reuse a connection: POST https://api.smithery.ai/connect/{namespace}
-    2. Call the tool: POST https://api.smithery.ai/connect/{namespace}/{connectionId}/mcp
+    Uses stored namespace/connection or falls back to creating one.
+    Smithery Connect returns SSE-format responses that need special parsing.
     """
     import httpx
-    import hashlib
+    import json as json_mod
 
-    # Get Smithery API key
+    # Get Smithery API key and connection details
     from app.services.resource_discovery import _get_smithery_api_key
     api_key = await _get_smithery_api_key()
     if not api_key:
         return "❌ Smithery API key not configured. Please set it in Enterprise Settings → Tools."
 
-    namespace = "clawith"
-    # Use a stable connection ID based on mcp_url + config hash
-    config_hash = hashlib.md5(str(sorted(config.items())).encode()).hexdigest()[:8]
-    connection_id = f"{mcp_url.split('//')[1].split('.')[0]}-{config_hash}"
+    # Get namespace + connection from tool config, or use defaults
+    namespace = config.pop("smithery_namespace", None)
+    connection_id = config.pop("smithery_connection_id", None)
+
+    if not namespace or not connection_id:
+        # Fallback: try to get from Smithery settings
+        try:
+            from app.models.tool import Tool
+            async with async_session() as db:
+                r = await db.execute(select(Tool).where(Tool.name == "discover_resources"))
+                disc_tool = r.scalar_one_or_none()
+                if disc_tool and disc_tool.config:
+                    namespace = namespace or disc_tool.config.get("smithery_namespace")
+                    connection_id = connection_id or disc_tool.config.get("smithery_connection_id")
+        except Exception:
+            pass
+
+    if not namespace or not connection_id:
+        return (
+            "❌ Smithery Connect namespace/connection not configured. "
+            "Please set smithery_namespace and smithery_connection_id in the tool configuration."
+        )
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -988,27 +1005,7 @@ async def _execute_via_smithery_connect(mcp_url: str, tool_name: str, arguments:
 
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            # Step 1: Create/update the connection
-            conn_resp = await client.post(
-                f"https://api.smithery.ai/connect/{namespace}",
-                json={
-                    "connectionId": connection_id,
-                    "mcpUrl": mcp_url,
-                    "headers": config,  # Config keys (like GITHUB_PERSONAL_ACCESS_TOKEN) are passed as headers
-                },
-                headers=headers,
-            )
-
-            if conn_resp.status_code not in (200, 201):
-                return f"❌ Failed to create Smithery Connect connection: HTTP {conn_resp.status_code} — {conn_resp.text[:200]}"
-
-            conn_data = conn_resp.json()
-            status = conn_data.get("status", {})
-            if status.get("state") == "auth_required":
-                auth_url = status.get("authorizationUrl", "")
-                return f"⚠️ This MCP server requires OAuth authorization. Please visit: {auth_url}"
-
-            # Step 2: Call the tool via the connection
+            # Call the tool via the existing connection
             tool_resp = await client.post(
                 f"https://api.smithery.ai/connect/{namespace}/{connection_id}/mcp",
                 json={
@@ -1023,12 +1020,31 @@ async def _execute_via_smithery_connect(mcp_url: str, tool_name: str, arguments:
                 headers=headers,
             )
 
-            data = tool_resp.json()
+            # Smithery Connect returns SSE format: "event: message\ndata: {...}\n"
+            raw = tool_resp.text
+            data = None
+
+            # Parse SSE response
+            for line in raw.split("\n"):
+                line = line.strip()
+                if line.startswith("data: "):
+                    try:
+                        data = json_mod.loads(line[6:])
+                        break
+                    except json_mod.JSONDecodeError:
+                        pass
+
+            # Fallback: try parsing as plain JSON
+            if data is None:
+                try:
+                    data = json_mod.loads(raw)
+                except json_mod.JSONDecodeError:
+                    return f"❌ Unexpected response from Smithery: {raw[:300]}"
 
             if "error" in data:
                 err = data["error"]
                 msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-                return f"❌ MCP tool error: {msg[:200]}"
+                return f"❌ MCP tool error: {msg[:300]}"
 
             result = data.get("result", {})
             if isinstance(result, str):
