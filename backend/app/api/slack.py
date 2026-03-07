@@ -294,17 +294,29 @@ async def slack_event_webhook(
         if not _url:
             continue
         try:
-            async with _httpx.AsyncClient(timeout=30) as _hc:
+            async with _httpx.AsyncClient(timeout=30, follow_redirects=True) as _hc:
                 _r = await _hc.get(_url, headers={"Authorization": f"Bearer {_bot_token}"})
                 _r.raise_for_status()
-            (_upload_dir / _fname).write_bytes(_r.content)
+                (_upload_dir / _fname).write_bytes(_r.content)
             _file_user_messages.append(f"workspace/uploads/{_fname}")
             print(f"[Slack] Saved file {_fname} ({len(_r.content)} bytes)")
         except Exception as _e:
             print(f"[Slack] Failed to download file {_fname}: {_e}")
 
+    if not user_text and not _file_user_messages and slack_files:
+        # Files were present but all downloads failed — still send ack so user knows we got the file event
+        _file_names = ", ".join(_sf.get("name", "file") for _sf in slack_files)
+        _ack = f"收到了文件 {_file_names}，不过我暂时无法下载其内容，请检查 Slack App 是否已授权 files:read 权限。"
+        db.add(ChatMessage(agent_id=agent_id, user_id=platform_user_id, role="assistant",
+                           content=_ack, conversation_id=session_conv_id))
+        sess.last_message_at = datetime.now(timezone.utc)
+        await db.commit()
+        if _bot_token and channel_id:
+            await _send_slack_messages(_bot_token, channel_id, _ack)
+        return {"ok": True}
+
     if _file_user_messages and not user_text:
-        # Files only — store file paths as user message & send ack
+        # Files downloaded, no text — store file paths as user message & send ack
         _file_content = " ".join(f"[文件已上传: {p}]" for p in _file_user_messages)
         db.add(ChatMessage(agent_id=agent_id, user_id=platform_user_id, role="user",
                            content=_file_content, conversation_id=session_conv_id))
