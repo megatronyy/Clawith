@@ -127,7 +127,10 @@ class AutonomyService:
         channel_result = await db.execute(
             select(ChannelConfig).where(ChannelConfig.agent_id == agent.id)
         )
-        channel = channel_result.scalar_one_or_none()
+        # Use first() instead of scalar_one_or_none() because an agent may have
+        # multiple channel_config rows (Feishu, Slack, Discord). Picking the first
+        # Feishu-configured one is sufficient for L2 notifications.
+        channel = channel_result.scalars().first()
 
         if channel and channel.app_id and channel.app_secret:
             # Get creator's Feishu open_id
@@ -148,7 +151,8 @@ class AutonomyService:
         channel_result = await db.execute(
             select(ChannelConfig).where(ChannelConfig.agent_id == agent.id)
         )
-        channel = channel_result.scalar_one_or_none()
+        # Use first() for the same reason as _notify_creator above.
+        channel = channel_result.scalars().first()
 
         if channel and channel.app_id and channel.app_secret:
             creator_result = await db.execute(
