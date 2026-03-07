@@ -298,11 +298,16 @@ async def slack_event_webhook(
             async with _httpx.AsyncClient(timeout=30, follow_redirects=True) as _hc:
                 _r = await _hc.get(_url, headers={"Authorization": f"Bearer {_bot_token}"})
                 _r.raise_for_status()
+                # Detect Slack SSO redirect returning HTML instead of actual file
+                _ct = _r.headers.get("content-type", "")
+                if "text/html" in _ct or _r.content[:15].lower().startswith(b"<!doctype html"):
+                    raise ValueError(f"Got HTML response (SSO redirect) — Slack App needs 'files:read' scope. Content-Type: {_ct}")
                 (_upload_dir / _fname).write_bytes(_r.content)
             _file_user_messages.append(f"workspace/uploads/{_fname}")
             print(f"[Slack] Saved file {_fname} ({len(_r.content)} bytes)")
         except Exception as _e:
             print(f"[Slack] Failed to download file {_fname}: {_e}")
+
 
     if not user_text and not _file_user_messages and slack_files:
         # Files were present but all downloads failed — still send ack so user knows we got the file event
