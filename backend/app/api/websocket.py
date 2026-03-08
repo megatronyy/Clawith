@@ -24,22 +24,31 @@ class ConnectionManager:
     """Manage WebSocket connections per agent."""
 
     def __init__(self):
-        self.active_connections: dict[str, list[WebSocket]] = {}
+        # agent_id_str -> list of (WebSocket, session_id_str | None)
+        self.active_connections: dict[str, list[tuple]] = {}
 
-    async def connect(self, agent_id: str, websocket: WebSocket):
+    async def connect(self, agent_id: str, websocket: WebSocket, session_id: str = None):
         await websocket.accept()
         if agent_id not in self.active_connections:
             self.active_connections[agent_id] = []
-        self.active_connections[agent_id].append(websocket)
+        self.active_connections[agent_id].append((websocket, session_id))
 
     def disconnect(self, agent_id: str, websocket: WebSocket):
         if agent_id in self.active_connections:
-            self.active_connections[agent_id].remove(websocket)
+            self.active_connections[agent_id] = [
+                (ws, sid) for ws, sid in self.active_connections[agent_id] if ws != websocket
+            ]
 
     async def send_message(self, agent_id: str, message: dict):
         if agent_id in self.active_connections:
-            for ws in self.active_connections[agent_id]:
+            for ws, _sid in self.active_connections[agent_id]:
                 await ws.send_json(message)
+
+    def get_active_session_ids(self, agent_id: str) -> list[str]:
+        """Return distinct session IDs for all active WS connections of an agent."""
+        if agent_id not in self.active_connections:
+            return []
+        return list(set(sid for _ws, sid in self.active_connections[agent_id] if sid))
 
 
 manager = ConnectionManager()
@@ -592,7 +601,7 @@ async def websocket_chat(
     agent_id_str = str(agent_id)
     if agent_id_str not in manager.active_connections:
         manager.active_connections[agent_id_str] = []
-    manager.active_connections[agent_id_str].append(websocket)
+    manager.active_connections[agent_id_str].append((websocket, conv_id))
     print(f"[WS] Ready! Agent={agent_name}")
 
     # Build conversation context from history
