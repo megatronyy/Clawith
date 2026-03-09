@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg" alt="FastAPI" />
+  <a href="https://discord.gg/3AKMBM2G"><img src="https://img.shields.io/badge/Discord-参加する-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -147,6 +148,10 @@ bash restart.sh   # サービス起動
 ## 🔒 セキュリティチェックリスト
 
 デフォルトパスワードの変更 · 強力な `SECRET_KEY` / `JWT_SECRET_KEY` の設定 · HTTPS の有効化 · 本番環境では PostgreSQL を使用 · 定期的なバックアップ · Docker socket アクセスの制限。
+
+## 💬 コミュニティ
+
+[Discord サーバー](https://discord.gg/3AKMBM2G)に参加して、チームとチャット、質問、フィードバックの共有をしましょう！
 
 ## 📄 ライセンス
 

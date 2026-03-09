@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg" alt="FastAPI" />
+  <a href="https://discord.gg/3AKMBM2G"><img src="https://img.shields.io/badge/Discord-참여하기-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -148,6 +149,10 @@ bash restart.sh   # 서비스 시작
 ## 🔒 보안 체크리스트
 
 기본 비밀번호 변경 · 강력한 `SECRET_KEY` / `JWT_SECRET_KEY` 설정 · HTTPS 활성화 · 프로덕션에서 PostgreSQL 사용 · 정기 백업 · Docker 소켓 접근 제한.
+
+## 💬 커뮤니티
+
+[Discord 서버](https://discord.gg/3AKMBM2G)에 참여하여 팀과 대화하고, 질문하고, 피드백을 공유하세요!
 
 ## 📄 라이선스
 

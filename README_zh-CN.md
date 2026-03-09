@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg" alt="FastAPI" />
+  <a href="https://discord.gg/3AKMBM2G"><img src="https://img.shields.io/badge/Discord-加入社区-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -227,6 +228,10 @@ git clone https://gitclone.com/github.com/dataelement/Clawith.git
 ## 🔒 安全清单
 
 修改默认密码 · 设置强 `SECRET_KEY` / `JWT_SECRET_KEY` · 启用 HTTPS · 生产环境使用 PostgreSQL · 定期备份 · 限制 Docker socket 访问。
+
+## 💬 社区
+
+加入我们的 [Discord 服务器](https://discord.gg/3AKMBM2G)，与团队交流、提问、分享反馈！
 
 ## 📄 许可证
 

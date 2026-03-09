@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg" alt="FastAPI" />
+  <a href="https://discord.gg/3AKMBM2G"><img src="https://img.shields.io/badge/Discord-Únete-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -147,6 +148,10 @@ Si `git clone` es lento o se agota el tiempo:
 ## 🔒 Lista de Seguridad
 
 Cambiar contraseñas predeterminadas · Configurar `SECRET_KEY` / `JWT_SECRET_KEY` fuertes · Habilitar HTTPS · Usar PostgreSQL en producción · Hacer copias de seguridad regularmente · Restringir acceso al socket Docker.
+
+## 💬 Comunidad
+
+¡Únete a nuestro [servidor de Discord](https://discord.gg/3AKMBM2G) para chatear con el equipo, hacer preguntas y compartir feedback!
 
 ## 📄 Licencia
 

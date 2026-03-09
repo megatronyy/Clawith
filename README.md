@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg" alt="FastAPI" />
+  <a href="https://discord.gg/3AKMBM2G"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -224,6 +225,10 @@ We welcome contributions of all kinds! Whether it's fixing bugs, adding features
 ## 🔒 Security Checklist
 
 Change default passwords · Set strong `SECRET_KEY` / `JWT_SECRET_KEY` · Enable HTTPS · Use PostgreSQL in production · Back up regularly · Restrict Docker socket access.
+
+## 💬 Community
+
+Join our [Discord server](https://discord.gg/3AKMBM2G) to chat with the team, ask questions, share feedback, or just hang out!
 
 ## 📄 License
 
