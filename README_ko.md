@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" />
+  <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache 2.0 License" />
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg" alt="React" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg" alt="FastAPI" />
@@ -156,4 +156,4 @@ bash restart.sh   # 서비스 시작
 
 ## 📄 라이선스
 
-[MIT](LICENSE)
+[Apache 2.0](LICENSE)
