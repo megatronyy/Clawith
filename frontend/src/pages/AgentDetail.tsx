@@ -2260,7 +2260,8 @@ function AgentDetailInner() {
                                                                                 return (
                                                                                     <div key={mi} style={{
                                                                                         padding: '6px 10px', borderRadius: '6px',
-                                                                                        background: 'rgba(var(--accent-primary-rgb, 99,102,241), 0.08)',
+                                                                                        background: 'var(--bg-secondary)',
+                                                                                        borderLeft: '2px solid var(--border-subtle)',
                                                                                         fontSize: '11px', color: 'var(--text-secondary)',
                                                                                         whiteSpace: 'pre-wrap', maxHeight: '100px', overflow: 'auto',
                                                                                     }}>
