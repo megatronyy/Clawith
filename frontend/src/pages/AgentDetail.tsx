@@ -743,6 +743,11 @@ function AgentDetailInner() {
         }
     }, [agent]);
 
+    // Welcome message editor state (must be at top level — not inside IIFE)
+    const [wmDraft, setWmDraft] = useState('');
+    const [wmSaved, setWmSaved] = useState(false);
+    useEffect(() => { setWmDraft((agent as any)?.welcome_message || ''); }, [(agent as any)?.welcome_message]);
+
     // Load chat history + connect websocket when chat tab is active
     const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
     const parseChatMsg = (msg: ChatMsg): ChatMsg => {
@@ -2873,10 +2878,6 @@ function AgentDetailInner() {
                                 {/* Welcome Message */}
                                 {(() => {
                                     const isChinese = i18n.language?.startsWith('zh');
-                                    const [wmDraft, setWmDraft] = useState((agent as any)?.welcome_message || '');
-                                    const [wmSaved, setWmSaved] = useState(false);
-                                    // Sync draft when agent data reloads
-                                    useEffect(() => { setWmDraft((agent as any)?.welcome_message || ''); }, [(agent as any)?.welcome_message]);
                                     const saveWm = async () => {
                                         try {
                                             await agentApi.update(id!, { welcome_message: wmDraft } as any);
