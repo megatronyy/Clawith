@@ -518,11 +518,6 @@ async def ensure_workspace(agent_id: uuid.UUID) -> Path:
     # Ensure shared enterprise_info directory exists
     enterprise_dir = WORKSPACE_ROOT / "enterprise_info"
     enterprise_dir.mkdir(parents=True, exist_ok=True)
-    (enterprise_dir / "knowledge_base").mkdir(exist_ok=True)
-    # Create default company profile if missing
-    profile_path = enterprise_dir / "company_profile.md"
-    if not profile_path.exists():
-        profile_path.write_text("# Company Profile\n\n_Edit company information here. All digital employees can access this._\n\n## Basic Info\n- Company Name:\n- Industry:\n- Founded:\n\n## Business Overview\n\n## Organization Structure\n\n## Company Culture\n", encoding="utf-8")
 
     # Migrate: move root-level memory.md into memory/ directory
     if (ws / "memory.md").exists() and not (ws / "memory" / "memory.md").exists():
