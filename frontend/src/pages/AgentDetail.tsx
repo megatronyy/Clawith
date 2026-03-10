@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { agentApi, taskApi, fileApi, channelApi, enterpriseApi, activityApi, scheduleApi, skillApi, triggerApi } from '../services/api';
+import { agentApi, taskApi, fileApi, channelApi, enterpriseApi, activityApi, scheduleApi, skillApi, triggerApi, uploadFileWithProgress } from '../services/api';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { useAuthStore } from '../stores';
 import PromptModal from '../components/PromptModal';
@@ -594,17 +594,26 @@ export default function AgentDetail() {
     };
 
     const createNewSession = async () => {
-        const tkn = localStorage.getItem('token');
-        const res = await fetch(`/api/agents/${id}/sessions`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tkn}` },
-            body: JSON.stringify({}),
-        });
-        if (res.ok) {
-            const newSess = await res.json();
-            setSessions(prev => [newSess, ...prev]);
-            setChatMessages([]);
-            setHistoryMsgs([]);
-            setActiveSession(newSess);
+        try {
+            const tkn = localStorage.getItem('token');
+            const res = await fetch(`/api/agents/${id}/sessions`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tkn}` },
+                body: JSON.stringify({}),
+            });
+            if (res.ok) {
+                const newSess = await res.json();
+                setSessions(prev => [newSess, ...prev]);
+                setChatMessages([]);
+                setHistoryMsgs([]);
+                setActiveSession(newSess);
+            } else {
+                const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+                console.error('Failed to create session:', err);
+                alert(`Failed to create session: ${err.detail || res.status}`);
+            }
+        } catch (err: any) {
+            console.error('Failed to create session:', err);
+            alert(`Failed to create session: ${err.message || err}`);
         }
     };
 
@@ -675,6 +684,7 @@ export default function AgentDetail() {
     const [chatInput, setChatInput] = useState('');
     const [wsConnected, setWsConnected] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(-1);
     const [attachedFile, setAttachedFile] = useState<{ name: string; text: string; path?: string; imageUrl?: string } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
@@ -850,6 +860,31 @@ export default function AgentDetail() {
     const isNearBottom = useRef(true);
     const isFirstLoad = useRef(true);
     const [showScrollBtn, setShowScrollBtn] = useState(false);
+    // Read-only history scroll-to-bottom
+    const historyContainerRef = useRef<HTMLDivElement>(null);
+    const [showHistoryScrollBtn, setShowHistoryScrollBtn] = useState(false);
+    const handleHistoryScroll = () => {
+        const el = historyContainerRef.current;
+        if (!el) return;
+        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        setShowHistoryScrollBtn(distFromBottom > 200);
+    };
+    const scrollHistoryToBottom = () => {
+        const el = historyContainerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+        setShowHistoryScrollBtn(false);
+    };
+    // Auto-show button when history messages overflow the container
+    useEffect(() => {
+        const el = historyContainerRef.current;
+        if (!el) return;
+        // Use a small timeout to let the DOM render the messages first
+        const timer = setTimeout(() => {
+            const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+            setShowHistoryScrollBtn(distFromBottom > 200);
+        }, 100);
+        return () => clearTimeout(timer);
+    }, [historyMsgs, activeSession?.id]);
     const handleChatScroll = () => {
         const el = chatContainerRef.current;
         if (!el) return;
@@ -917,13 +952,16 @@ export default function AgentDetail() {
 
     const handleChatFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]; if (!file) return;
-        setUploading(true);
+        setUploading(true); setUploadProgress(0);
         try {
-            const fd = new FormData(); fd.append('file', file); if (id) fd.append('agent_id', id);
-            const resp = await fetch('/api/chat/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
-            if (!resp.ok) { const err = await resp.json(); alert(err.detail || t('agent.upload.failed')); return; }
-            const data = await resp.json(); setAttachedFile({ name: data.filename, text: data.extracted_text, path: data.workspace_path, imageUrl: data.image_data_url || undefined });
-        } catch (err) { alert(t('agent.upload.failed')); } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+            const data = await uploadFileWithProgress(
+                `/chat/upload`,
+                file,
+                (pct) => setUploadProgress(pct),
+                id ? { agent_id: id } : undefined,
+            );
+            setAttachedFile({ name: data.filename, text: data.extracted_text, path: data.workspace_path, imageUrl: data.image_data_url || undefined });
+        } catch (err) { alert(t('agent.upload.failed')); } finally { setUploading(false); setUploadProgress(-1); if (fileInputRef.current) fileInputRef.current.value = ''; }
     };
 
     // Clipboard paste handler — auto-upload pasted images
@@ -939,14 +977,16 @@ export default function AgentDetail() {
                 const ext = blob.type.split('/')[1] || 'png';
                 const fileName = `paste-${Date.now()}.${ext}`;
                 const file = new File([blob], fileName, { type: blob.type });
-                setUploading(true);
+                setUploading(true); setUploadProgress(0);
                 try {
-                    const fd = new FormData(); fd.append('file', file); if (id) fd.append('agent_id', id);
-                    const resp = await fetch('/api/chat/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
-                    if (!resp.ok) { const err = await resp.json(); alert(err.detail || t('agent.upload.failed')); return; }
-                    const data = await resp.json();
+                    const data = await uploadFileWithProgress(
+                        `/chat/upload`,
+                        file,
+                        (pct) => setUploadProgress(pct),
+                        id ? { agent_id: id } : undefined,
+                    );
                     setAttachedFile({ name: data.filename, text: data.extracted_text, path: data.workspace_path, imageUrl: data.image_data_url || undefined });
-                } catch (err) { alert(t('agent.upload.failed')); } finally { setUploading(false); }
+                } catch (err) { alert(t('agent.upload.failed')); } finally { setUploading(false); setUploadProgress(-1); }
                 return; // Only handle the first image
             }
         }
@@ -1689,6 +1729,7 @@ export default function AgentDetail() {
                             read: (p) => fileApi.read(id!, p),
                             write: (p, c) => fileApi.write(id!, p, c),
                             delete: (p) => fileApi.delete(id!, p),
+                            downloadUrl: (p) => fileApi.downloadUrl(id!, p),
                         };
                         return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1750,7 +1791,8 @@ export default function AgentDetail() {
                             read: (p) => fileApi.read(id!, p),
                             write: (p, c) => fileApi.write(id!, p, c),
                             delete: (p) => fileApi.delete(id!, p),
-                            upload: (file, path) => fileApi.upload(id!, file, path),
+                            upload: (file, path, onProgress) => fileApi.upload(id!, file, path, onProgress),
+                            downloadUrl: (p) => fileApi.downloadUrl(id!, p),
                         };
                         return (
                             <div>
@@ -1864,7 +1906,8 @@ export default function AgentDetail() {
                             read: (p) => fileApi.read(id!, p),
                             write: (p, c) => fileApi.write(id!, p, c),
                             delete: (p) => fileApi.delete(id!, p),
-                            upload: (file, path) => fileApi.upload(id!, file, path + '/'),
+                            upload: (file, path, onProgress) => fileApi.upload(id!, file, path + '/', onProgress),
+                            downloadUrl: (p) => fileApi.downloadUrl(id!, p),
                         };
                         return <FileBrowser api={adapter} rootPath="workspace" features={{ upload: true, newFile: true, newFolder: true, edit: true, delete: true, directoryNavigation: true }} />;
                     })()
@@ -1985,51 +2028,56 @@ export default function AgentDetail() {
                                     </div>
                                 ) : (activeSession.user_id && currentUser && activeSession.user_id !== String(currentUser.id)) || activeSession.source_channel === 'agent' || activeSession.participant_type === 'agent' ? (
                                     /* ── Read-only history view (other user's session or agent-to-agent) ── */
-                                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '12px', padding: '4px 8px', background: 'var(--bg-secondary)', borderRadius: '4px', display: 'inline-block' }}>
-                                            {activeSession.source_channel === 'agent' ? `🤖 Agent Conversation · ${activeSession.username || 'Agents'}` : `Read-only · ${activeSession.username || 'User'}`}
-                                        </div>
-                                        {historyMsgs.map((m: any, i: number) => {
-                                            if (m.role === 'tool_call') {
-                                                let parsed: any = {}; try { parsed = typeof m.content === 'string' ? JSON.parse(m.content) : m.content; } catch { parsed = { name: 'tool', result: m.content }; }
+                                    <>
+                                        <div ref={historyContainerRef} onScroll={handleHistoryScroll} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '12px', padding: '4px 8px', background: 'var(--bg-secondary)', borderRadius: '4px', display: 'inline-block' }}>
+                                                {activeSession.source_channel === 'agent' ? `🤖 Agent Conversation · ${activeSession.username || 'Agents'}` : `Read-only · ${activeSession.username || 'User'}`}
+                                            </div>
+                                            {historyMsgs.map((m: any, i: number) => {
+                                                if (m.role === 'tool_call') {
+                                                    let parsed: any = {}; try { parsed = typeof m.content === 'string' ? JSON.parse(m.content) : m.content; } catch { parsed = { name: 'tool', result: m.content }; }
+                                                    return (
+                                                        <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', paddingLeft: '36px' }}>
+                                                            <details style={{ flex: 1, borderRadius: '8px', background: 'var(--accent-subtle)', border: '1px solid var(--accent-subtle)', fontSize: '12px' }}>
+                                                                <summary style={{ padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', userSelect: 'none', listStyle: 'none' }}>
+                                                                    <span style={{ fontWeight: 600, color: 'var(--accent-text)' }}>{parsed.name || 'tool'}</span>
+                                                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', marginLeft: 'auto' }}>done</span>
+                                                                </summary>
+                                                                {parsed.result && <div style={{ padding: '4px 10px 8px', color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '160px', overflow: 'auto' }}>{parsed.result}</div>}
+                                                            </details>
+                                                        </div>
+                                                    );
+                                                }
                                                 return (
-                                                    <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', paddingLeft: '36px' }}>
-                                                        <details style={{ flex: 1, borderRadius: '8px', background: 'var(--accent-subtle)', border: '1px solid var(--accent-subtle)', fontSize: '12px' }}>
-                                                            <summary style={{ padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', userSelect: 'none', listStyle: 'none' }}>
-                                                                <span style={{ fontWeight: 600, color: 'var(--accent-text)' }}>{parsed.name || 'tool'}</span>
-                                                                <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', marginLeft: 'auto' }}>done</span>
-                                                            </summary>
-                                                            {parsed.result && <div style={{ padding: '4px 10px 8px', color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '160px', overflow: 'auto' }}>{parsed.result}</div>}
-                                                        </details>
+                                                    <div key={i} style={{ display: 'flex', flexDirection: m.role === 'assistant' ? 'row' : 'row-reverse', gap: '8px', marginBottom: '8px' }}>
+                                                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: m.role === 'assistant' ? 'var(--bg-elevated)' : 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', flexShrink: 0, color: 'var(--text-secondary)', fontWeight: 600 }}>{m.sender_name ? m.sender_name[0] : (m.role === 'assistant' ? 'A' : 'U')}</div>
+                                                        <div style={{ maxWidth: '70%', padding: '8px 12px', borderRadius: '12px', background: m.role === 'assistant' ? 'var(--bg-secondary)' : 'rgba(16,185,129,0.1)', fontSize: '13px', lineHeight: '1.5', wordBreak: 'break-word' }}>
+                                                            {m.sender_name && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '2px', fontWeight: 600 }}>🤖 {m.sender_name}</div>}
+                                                            {(() => {
+                                                                const pm = parseChatMsg({ role: m.role as ChatMsg['role'], content: m.content || '' });
+                                                                const fe = pm.fileName?.split('.').pop()?.toLowerCase() ?? '';
+                                                                const fi = fe === 'pdf' ? '📄' : (fe === 'csv' || fe === 'xlsx' || fe === 'xls') ? '📊' : (fe === 'docx' || fe === 'doc') ? '📝' : '📎';
+                                                                return (
+                                                                    <>
+                                                                        {pm.fileName && (
+                                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'var(--bg-elevated)', borderRadius: '6px', padding: '4px 8px', marginBottom: pm.content ? '4px' : '0', fontSize: '11px', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                                                                                <span>{fi}</span>
+                                                                                <span style={{ fontWeight: 500, color: 'var(--text-primary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pm.fileName}</span>
+                                                                            </div>
+                                                                        )}
+                                                                        {pm.content ? (m.role === 'assistant' ? <MarkdownRenderer content={pm.content} /> : <div style={{ whiteSpace: 'pre-wrap' }}>{pm.content}</div>) : null}
+                                                                    </>
+                                                                );
+                                                            })()}
+                                                        </div>
                                                     </div>
                                                 );
-                                            }
-                                            return (
-                                                <div key={i} style={{ display: 'flex', flexDirection: m.role === 'assistant' ? 'row' : 'row-reverse', gap: '8px', marginBottom: '8px' }}>
-                                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: m.role === 'assistant' ? 'var(--bg-elevated)' : 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', flexShrink: 0, color: 'var(--text-secondary)', fontWeight: 600 }}>{m.sender_name ? m.sender_name[0] : (m.role === 'assistant' ? 'A' : 'U')}</div>
-                                                    <div style={{ maxWidth: '70%', padding: '8px 12px', borderRadius: '12px', background: m.role === 'assistant' ? 'var(--bg-secondary)' : 'rgba(16,185,129,0.1)', fontSize: '13px', lineHeight: '1.5', wordBreak: 'break-word' }}>
-                                                        {m.sender_name && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '2px', fontWeight: 600 }}>🤖 {m.sender_name}</div>}
-                                                        {(() => {
-                                                            const pm = parseChatMsg({ role: m.role as ChatMsg['role'], content: m.content || '' });
-                                                            const fe = pm.fileName?.split('.').pop()?.toLowerCase() ?? '';
-                                                            const fi = fe === 'pdf' ? '📄' : (fe === 'csv' || fe === 'xlsx' || fe === 'xls') ? '📊' : (fe === 'docx' || fe === 'doc') ? '📝' : '📎';
-                                                            return (
-                                                                <>
-                                                                    {pm.fileName && (
-                                                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'var(--bg-elevated)', borderRadius: '6px', padding: '4px 8px', marginBottom: pm.content ? '4px' : '0', fontSize: '11px', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
-                                                                            <span>{fi}</span>
-                                                                            <span style={{ fontWeight: 500, color: 'var(--text-primary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pm.fileName}</span>
-                                                                        </div>
-                                                                    )}
-                                                                    {pm.content ? (m.role === 'assistant' ? <MarkdownRenderer content={pm.content} /> : <div style={{ whiteSpace: 'pre-wrap' }}>{pm.content}</div>) : null}
-                                                                </>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                                            })}
+                                        </div>
+                                        {showHistoryScrollBtn && (
+                                            <button onClick={scrollHistoryToBottom} style={{ position: 'absolute', bottom: '20px', right: '20px', width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', zIndex: 10 }} title="Scroll to bottom">↓</button>
+                                        )}
+                                    </>
                                 ) : (
                                     /* ── Live WebSocket chat (own session) ── */
                                     <>
@@ -2131,6 +2179,14 @@ export default function AgentDetail() {
                                         <div style={{ display: 'flex', gap: '8px', padding: '6px 12px', borderTop: '1px solid var(--border-subtle)' }}>
                                             <input type="file" ref={fileInputRef} onChange={handleChatFile} style={{ display: 'none' }} />
                                             <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={!wsConnected || uploading} style={{ padding: '6px 10px', fontSize: '14px', minWidth: 'auto' }}>{uploading ? '⏳' : '⦹'}</button>
+                                            {uploading && uploadProgress >= 0 && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 120px' }}>
+                                                    <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                                                        <div style={{ height: '100%', borderRadius: '2px', background: 'var(--accent-primary)', width: `${uploadProgress}%`, transition: 'width 0.15s ease' }} />
+                                                    </div>
+                                                    <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{uploadProgress}%</span>
+                                                </div>
+                                            )}
                                             <input ref={chatInputRef} className="chat-input" value={chatInput} onChange={e => setChatInput(e.target.value)}
                                                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMsg(); } }}
                                                 onPaste={handlePaste}

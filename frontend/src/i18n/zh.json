@@ -555,7 +555,8 @@
     "yes": "是",
     "no": "否",
     "all": "全部",
-    "none": "无"
+    "none": "无",
+    "download": "下载"
   },
   "channelGuide": {
     "setupGuide": "配置说明",

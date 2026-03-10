@@ -154,6 +154,12 @@ bash restart.sh   # 서비스 시작
 
 [Discord 서버](https://discord.gg/3AKMBM2G)에 참여하여 팀과 대화하고, 질문하고, 피드백을 공유하세요!
 
+모바일에서 아래 QR 코드를 스캔하여 커뮤니티에 참여할 수도 있습니다:
+
+<p align="center">
+  <img src="assets/QR_Code.png" alt="커뮤니티 QR 코드" width="200" />
+</p>
+
 ## ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/image?repos=dataelement/Clawith&type=date&legend=top-left)](https://www.star-history.com/?repos=dataelement%2FClawith&type=date&legend=top-left)

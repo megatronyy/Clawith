@@ -545,7 +545,8 @@
     "yes": "Yes",
     "no": "No",
     "all": "All",
-    "none": "None"
+    "none": "None",
+    "download": "Download"
   },
   "channelGuide": {
     "setupGuide": "Setup Guide",

@@ -153,6 +153,12 @@ bash restart.sh   # サービス起動
 
 [Discord サーバー](https://discord.gg/3AKMBM2G)に参加して、チームとチャット、質問、フィードバックの共有をしましょう！
 
+スマホで下のQRコードをスキャンしてコミュニティに参加することもできます：
+
+<p align="center">
+  <img src="assets/QR_Code.png" alt="コミュニティQRコード" width="200" />
+</p>
+
 ## ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/image?repos=dataelement/Clawith&type=date&legend=top-left)](https://www.star-history.com/?repos=dataelement%2FClawith&type=date&legend=top-left)
