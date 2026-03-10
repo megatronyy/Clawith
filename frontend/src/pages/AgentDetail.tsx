@@ -2173,10 +2173,10 @@ function AgentDetailInner() {
                                                                                         } as any}>
                                                                                             {hasDetail && <span style={{ fontSize: '8px', color: 'var(--text-tertiary)', flexShrink: 0 }}>&#9654;</span>}
                                                                                             <span style={{
-                                                                                                fontWeight: 600, fontSize: '10px', color: 'var(--accent-primary)',
+                                                                                                fontWeight: 600, fontSize: '10px', color: 'var(--text-primary)',
                                                                                                 padding: '1px 6px', borderRadius: '3px',
-                                                                                                background: 'rgba(var(--accent-primary-rgb, 99,102,241), 0.1)',
-                                                                                                flexShrink: 0,
+                                                                                                background: 'var(--bg-tertiary, rgba(0,0,0,0.06))',
+                                                                                                flexShrink: 0, fontFamily: 'monospace',
                                                                                             }}>{tName}</span>
                                                                                             <span style={{
                                                                                                 color: 'var(--text-tertiary)', fontFamily: 'monospace', fontSize: '10px',
@@ -2220,10 +2220,10 @@ function AgentDetailInner() {
                                                                                         } as any}>
                                                                                             <span style={{ fontSize: '8px', color: 'var(--text-tertiary)', flexShrink: 0 }}>&#9654;</span>
                                                                                             <span style={{
-                                                                                                fontWeight: 600, fontSize: '10px', color: 'var(--success, #10b981)',
+                                                                                                fontWeight: 600, fontSize: '10px', color: 'var(--text-primary)',
                                                                                                 padding: '1px 6px', borderRadius: '3px',
-                                                                                                background: 'rgba(16,185,129,0.1)',
-                                                                                                flexShrink: 0,
+                                                                                                background: 'var(--bg-tertiary, rgba(0,0,0,0.06))',
+                                                                                                flexShrink: 0, fontFamily: 'monospace',
                                                                                             }}>{tName}</span>
                                                                                             <span style={{
                                                                                                 color: 'var(--text-tertiary)', fontFamily: 'monospace', fontSize: '10px',
