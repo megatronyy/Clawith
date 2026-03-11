@@ -430,7 +430,16 @@ export default function Chat() {
                                     </details>
                                 )}
                                 {msg.role === 'assistant' ? (
-                                    <MarkdownRenderer content={msg.content} />
+                                    streaming && !msg.content && i === messages.length - 1 ? (
+                                        <div className="thinking-indicator">
+                                            <div className="thinking-dots">
+                                                <span /><span /><span />
+                                            </div>
+                                            <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>{t('agent.chat.thinking', 'Thinking...')}</span>
+                                        </div>
+                                    ) : (
+                                        <MarkdownRenderer content={msg.content} />
+                                    )
                                 ) : (
                                     <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
                                 )}
