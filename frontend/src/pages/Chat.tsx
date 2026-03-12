@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { agentApi, enterpriseApi } from '../services/api';
+import { agentApi, enterpriseApi, uploadFileWithProgress } from '../services/api';
 import { useAuthStore } from '../stores';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 
@@ -69,6 +69,7 @@ export default function Chat() {
     const [input, setInput] = useState('');
     const [connected, setConnected] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<number>(0);
     const [streaming, setStreaming] = useState(false);
     const [attachedFile, setAttachedFile] = useState<{ name: string; text: string; path?: string; imageUrl?: string } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -77,6 +78,8 @@ export default function Chat() {
     const pendingToolCalls = useRef<ToolCall[]>([]);
     const streamContent = useRef('');
     const thinkingContent = useRef('');
+    const uploadAbortRef = useRef<(() => void) | null>(null);
+    const uploadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const { data: agent } = useQuery({
         queryKey: ['agent', id],
@@ -235,30 +238,48 @@ export default function Chat() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        setUploading(true);
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-            if (id) formData.append('agent_id', id);
-
-            const resp = await fetch('/api/chat/upload', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json();
-                alert(err.detail || t('agent.upload.failed'));
+        // Warn for very large files (>50MB)
+        if (file.size > 50 * 1024 * 1024) {
+            const confirmed = confirm(`File is large (${(file.size / 1024 / 1024).toFixed(1)} MB). Upload may take time. Continue?`);
+            if (!confirmed) {
+                if (fileInputRef.current) fileInputRef.current.value = '';
                 return;
             }
+        }
 
-            const data = await resp.json();
+        setUploading(true);
+        setUploadProgress(0);
+
+        // Set timeout for upload (5 minutes)
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            uploadTimeoutRef.current = setTimeout(() => {
+                uploadAbortRef.current?.();
+                reject(new Error('Upload timeout. Please try again.'));
+            }, 5 * 60 * 1000);
+        });
+
+        try {
+            const uploadTask = uploadFileWithProgress(
+                '/chat/upload',
+                file,
+                (pct) => setUploadProgress(pct),
+                id ? { agent_id: id } : undefined,
+            );
+            uploadAbortRef.current = uploadTask.abort;
+
+            const data = await Promise.race([uploadTask, timeoutPromise]);
             setAttachedFile({ name: data.filename, text: data.extracted_text, path: data.workspace_path, imageUrl: data.image_data_url || undefined });
-        } catch (err) {
-            alert(t('agent.upload.failed') + ': ' + (err as Error).message);
+        } catch (err: any) {
+            if (err.message !== 'Network error' && err.name !== 'AbortError') {
+                alert(t('agent.upload.failed') + ': ' + err.message);
+            }
+            setAttachedFile(null);
         } finally {
+            if (uploadTimeoutRef.current) clearTimeout(uploadTimeoutRef.current);
+            uploadTimeoutRef.current = null;
+            uploadAbortRef.current = null;
             setUploading(false);
+            setUploadProgress(0);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
@@ -469,7 +490,24 @@ export default function Chat() {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {attachedFile && (
+                {uploading && (
+                    <div style={{
+                        padding: '8px 12px',
+                        background: 'var(--bg-elevated)',
+                        borderTop: '1px solid var(--border-subtle)',
+                        fontSize: '12px',
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>Uploading...</span>
+                            <span style={{ color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{uploadProgress}%</span>
+                        </div>
+                        <div style={{ height: '4px', borderRadius: '2px', background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', borderRadius: '2px', background: 'var(--accent-primary)', width: `${uploadProgress}%`, transition: 'width 0.2s ease' }} />
+                        </div>
+                    </div>
+                )}
+
+                {attachedFile && !uploading && (
                     <div style={{
                         padding: '6px 12px',
                         background: 'var(--bg-elevated)',
@@ -502,15 +540,31 @@ export default function Chat() {
                         style={{ display: 'none' }}
 
                     />
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={!connected || uploading}
-                        style={{ padding: '8px 12px', fontSize: '16px', minWidth: 'auto' }}
-                        title={t('agent.workspace.uploadFile')}
-                    >
-                        {uploading ? Icons.loader : Icons.clip}
-                    </button>
+                    {uploading ? (
+                        <button
+                            className="btn btn-danger"
+                            onClick={() => {
+                                uploadAbortRef.current?.();
+                                if (uploadTimeoutRef.current) clearTimeout(uploadTimeoutRef.current);
+                                uploadTimeoutRef.current = null;
+                                uploadAbortRef.current = null;
+                            }}
+                            style={{ padding: '8px 12px', fontSize: '12px', minWidth: 'auto' }}
+                            title="Cancel upload"
+                        >
+                            ✕ Cancel
+                        </button>
+                    ) : (
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={!connected}
+                            style={{ padding: '8px 12px', fontSize: '16px', minWidth: 'auto' }}
+                            title={t('agent.workspace.uploadFile')}
+                        >
+                            {Icons.clip}
+                        </button>
+                    )}
                     <input
                         className="chat-input"
                         value={input}

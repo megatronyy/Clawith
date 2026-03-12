@@ -42,7 +42,18 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     return res.json();
 }
 
-async function uploadFile(url: string, file: File, extraFields?: Record<string, string>): Promise<any> {
+// Global abort controller for cancelling ongoing uploads
+let currentUploadAbort: AbortController | null = null;
+
+/** Cancel the current ongoing upload */
+export function cancelUpload(): void {
+    if (currentUploadAbort) {
+        currentUploadAbort.abort();
+        currentUploadAbort = null;
+    }
+}
+
+async function uploadFile(url: string, file: File, extraFields?: Record<string, string>, signal?: AbortSignal): Promise<any> {
     const token = localStorage.getItem('token');
     const formData = new FormData();
     formData.append('file', file);
@@ -55,6 +66,7 @@ async function uploadFile(url: string, file: File, extraFields?: Record<string, 
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
+        signal,
     });
     if (!res.ok) {
         const error = await res.json().catch(() => ({ detail: 'Upload failed' }));
@@ -64,42 +76,64 @@ async function uploadFile(url: string, file: File, extraFields?: Record<string, 
 }
 
 // Upload with progress tracking via XMLHttpRequest
+// Returns a Promise that can be awaited directly, plus an abort function for cancellation
 export function uploadFileWithProgress(
     url: string,
     file: File,
     onProgress?: (percent: number) => void,
     extraFields?: Record<string, string>,
-): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const token = localStorage.getItem('token');
-        const formData = new FormData();
-        formData.append('file', file);
-        if (extraFields) {
-            for (const [k, v] of Object.entries(extraFields)) {
-                formData.append(k, v);
-            }
+): Promise<any> & { abort: () => void } {
+    let aborted = false;
+    let xhr: XMLHttpRequest | null = null;
+
+    const abort = () => {
+        aborted = true;
+        if (xhr) {
+            xhr.abort();
+            xhr = null;
         }
-        const xhr = new XMLHttpRequest();
+    };
+
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file);
+    if (extraFields) {
+        for (const [k, v] of Object.entries(extraFields)) {
+            formData.append(k, v);
+        }
+    }
+
+    const promise = new Promise<any>((resolve, reject) => {
+        xhr = new XMLHttpRequest();
         xhr.open('POST', `${API_BASE}${url}`);
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.upload.onprogress = (e) => {
+            if (aborted) return;
             if (e.lengthComputable && onProgress) {
                 onProgress(Math.round((e.loaded / e.total) * 100));
             }
         };
         xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-                try { resolve(JSON.parse(xhr.responseText)); } catch { resolve(undefined); }
+            if (aborted) return;
+            if (xhr!.status >= 200 && xhr!.status < 300) {
+                try { resolve(JSON.parse(xhr!.responseText)); } catch { resolve(undefined); }
             } else {
                 try {
-                    const err = JSON.parse(xhr.responseText);
-                    reject(new Error(err.detail || `HTTP ${xhr.status}`));
-                } catch { reject(new Error(`HTTP ${xhr.status}`)); }
+                    const err = JSON.parse(xhr!.responseText);
+                    reject(new Error(err.detail || `HTTP ${xhr!.status}`));
+                } catch { reject(new Error(`HTTP ${xhr!.status}`)); }
             }
         };
-        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.onerror = () => {
+            if (aborted) return;
+            reject(new Error('Network error'));
+        };
         xhr.send(formData);
     });
+
+    // Attach abort method to promise for backward compatibility
+    (promise as any).abort = abort;
+    return promise as Promise<any> & { abort: () => void };
 }
 
 // ─── Auth ─────────────────────────────────────────────
