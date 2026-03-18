@@ -11,24 +11,14 @@ from app.services.sandbox.config import SandboxConfig
 class SelfHostedBackend(BaseSandboxBackend):
     """Self-hosted sandbox backend.
 
-    This backend connects to a user-deployed sandbox service.
-    The service should implement a simple REST API:
+    Connects to user-deployed sandbox services like aio-sandbox.
 
-    POST /execute
-    {
-        "code": "print('hello')",
-        "language": "python",
-        "timeout": 30
-    }
+    Usage:
+    - Set SANDBOX_API_URL to full endpoint URL
+    - For aio-sandbox shell: http://localhost:8080/v1/shell/exec
+    - For aio-sandbox jupyter: http://localhost:8080/v1/jupyter/execute
 
-    Response:
-    {
-        "success": true,
-        "stdout": "hello\n",
-        "stderr": "",
-        "exit_code": 0,
-        "duration_ms": 100
-    }
+    Response format expected: {"success": bool, "output": str, "error": str?}
     """
 
     name = "self_hosted"
@@ -60,11 +50,16 @@ class SelfHostedBackend(BaseSandboxBackend):
         """Check if the self-hosted service is available."""
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.api_url}/health",
-                    timeout=5.0
-                )
-                return response.status_code == 200
+                # Try /v1/sandbox first (aio-sandbox), then fall back to /health
+                for endpoint in ["/v1/sandbox", "/health"]:
+                    check_url = self.api_url.split("/v1/")[0] + endpoint if "/v1/" in self.api_url else f"{self.api_url.rsplit('/', 1)[0]}/health"
+                    try:
+                        response = await client.get(check_url, timeout=5.0)
+                        if response.status_code == 200:
+                            return True
+                    except Exception:
+                        continue
+                return False
         except Exception:
             return False
 
@@ -88,22 +83,43 @@ class SelfHostedBackend(BaseSandboxBackend):
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
-        payload = {
-            "code": code,
-            "language": language,
-            "timeout": timeout,
-        }
+        # Build payload based on the API endpoint
+        # For shell exec: {"cmd": "..."}
+        # For jupyter: {"code": "..."}
+        payload = {}
 
-        if work_dir:
-            payload["work_dir"] = work_dir
+        # Detect endpoint type from URL and build appropriate payload
+        url_lower = self.api_url.lower()
+        if "shell" in url_lower:
+            # aio-sandbox shell: wrap code as command
+            if language == "python":
+                cmd = f"python3 -c {repr(code)}"
+            elif language == "bash":
+                cmd = code
+            elif language == "node":
+                cmd = f"node -e {repr(code)}"
+            else:
+                cmd = code
+            payload = {"cmd": cmd}
+        elif "jupyter" in url_lower:
+            # aio-sandbox jupyter
+            payload = {"code": code}
+        else:
+            # Generic format
+            payload = {
+                "code": code,
+                "language": language,
+                "timeout": timeout,
+            }
 
         # Add any additional kwargs
         payload.update(kwargs)
 
         try:
             async with httpx.AsyncClient() as client:
+                # Use URL directly without appending /execute
                 response = await client.post(
-                    f"{self.api_url}/execute",
+                    self.api_url,
                     json=payload,
                     headers=headers,
                     timeout=float(timeout + 10)  # Add buffer for network
@@ -118,29 +134,47 @@ class SelfHostedBackend(BaseSandboxBackend):
                         stderr="",
                         exit_code=response.status_code,
                         duration_ms=duration_ms,
-                        error=f"Sandbox service error: HTTP {response.status_code}"
+                        error=f"Sandbox service error: HTTP {response.status_code} - {response.text[:200]}"
                     )
 
                 result = response.json()
 
-                # Parse response
-                # Expected format:
-                # {
-                #     "success": true,
-                #     "stdout": "...",
-                #     "stderr": "...",
-                #     "exit_code": 0,
-                #     "duration_ms": 100,
-                #     "error": null
-                # }
+                # Parse response - support multiple formats:
+                # Generic: {"success": true, "stdout": "...", "stderr": "...", "exit_code": 0}
+                # aio-sandbox shell: {"success": true, "data": {"output": "..."}}
+                # aio-sandbox jupyter: {"output": "...", "status": "ok"}
+
+                # Try to extract output
+                output = ""
+                stderr = ""
+                success = True
+                error_msg = None
+                exit_code = 0
+
+                # aio-sandbox shell format
+                if "data" in result and isinstance(result.get("data"), dict):
+                    output = result["data"].get("output", "")
+                # aio-sandbox jupyter format
+                elif "output" in result and "status" in result:
+                    output = result.get("output", "")
+                    if result.get("status") != "ok":
+                        success = False
+                        error_msg = result.get("error", result.get("output", ""))
+                # Generic format
+                else:
+                    output = result.get("stdout") or result.get("output") or ""
+                    stderr = result.get("stderr") or ""
+                    success = result.get("success", True)
+                    exit_code = result.get("exit_code", 0 if success else 1)
+                    error_msg = result.get("error")
 
                 return ExecutionResult(
-                    success=result.get("success", False),
-                    stdout=(result.get("stdout") or "")[:10000],
-                    stderr=(result.get("stderr") or "")[:5000],
-                    exit_code=result.get("exit_code", 1),
+                    success=success,
+                    stdout=output[:10000],
+                    stderr=stderr[:5000],
+                    exit_code=exit_code,
                     duration_ms=result.get("duration_ms", duration_ms),
-                    error=result.get("error")
+                    error=error_msg
                 )
 
         except httpx.TimeoutException:
