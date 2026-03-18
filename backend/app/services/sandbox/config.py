@@ -13,6 +13,7 @@ class SandboxType(str, Enum):
     JUDGE0 = "judge0"
     CODEDANDBOX = "codesandbox"
     SELF_HOSTED = "self_hosted"
+    AIO_SANDBOX = "aio_sandbox"
 
 
 class SandboxConfig(BaseModel):

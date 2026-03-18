@@ -68,6 +68,7 @@ def _register_builtin_backends() -> None:
     from app.services.sandbox.api.judge0_backend import Judge0Backend
     from app.services.sandbox.api.codesandbox_backend import CodeSandboxBackend
     from app.services.sandbox.remote.self_hosted_backend import SelfHostedBackend
+    from app.services.sandbox.remote.aio_sandbox_backend import AioSandboxBackend
 
     _BACKEND_REGISTRY[SandboxType.SUBPROCESS] = SubprocessBackend
     _BACKEND_REGISTRY[SandboxType.DOCKER] = DockerBackend
@@ -75,6 +76,7 @@ def _register_builtin_backends() -> None:
     _BACKEND_REGISTRY[SandboxType.JUDGE0] = Judge0Backend
     _BACKEND_REGISTRY[SandboxType.CODEDANDBOX] = CodeSandboxBackend
     _BACKEND_REGISTRY[SandboxType.SELF_HOSTED] = SelfHostedBackend
+    _BACKEND_REGISTRY[SandboxType.AIO_SANDBOX] = AioSandboxBackend
 
 
 # Register built-in backends on module import
