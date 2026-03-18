@@ -2859,7 +2859,7 @@ async def _plaza_add_comment(agent_id: uuid.UUID, arguments: dict) -> str:
 
 # ─── Code Execution ─────────────────────────────────────────────
 
-# Dangerous patterns to block
+# Dangerous patterns to block (for legacy fallback)
 _DANGEROUS_BASH = [
     "rm -rf /", "rm -rf ~", "sudo ", "mkfs", "dd if=",
     ":(){ :", "chmod 777 /", "chown ", "shutdown", "reboot",
@@ -2904,12 +2904,65 @@ def _check_code_safety(language: str, code: str) -> str | None:
 
 
 async def _execute_code(ws: Path, arguments: dict) -> str:
-    """Execute code in a sandboxed subprocess within the agent's workspace."""
+    """Execute code using the configured sandbox backend."""
+    language = arguments.get("language", "python")
+    code = arguments.get("code", "")
+    timeout = min(arguments.get("timeout", 30), 60)  # Max 60 seconds
+
+    if not code.strip():
+        return "❌ No code provided"
+
+    if language not in ("python", "bash", "node"):
+        return f"❌ Unsupported language: {language}. Use: python, bash, or node"
+
+    # Working directory is the agent's workspace/ subdirectory (must be absolute)
+    work_dir = (ws / "workspace").resolve()
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Import here to avoid circular imports
+        from app.config import get_sandbox_config
+        from app.services.sandbox.registry import get_sandbox_backend
+
+        # Get sandbox config and backend
+        sandbox_config = get_sandbox_config()
+        backend = get_sandbox_backend(sandbox_config)
+
+        # Execute code using the sandbox backend
+        result = await backend.execute(
+            code=code,
+            language=language,
+            timeout=timeout,
+            work_dir=str(work_dir),
+        )
+
+        # Format result for user display
+        return backend._format_result(result)
+
+    except ValueError as e:
+        # Sandbox disabled or misconfigured - fall back to legacy subprocess
+        # Import asyncio for fallback
+        import asyncio
+
+        # Fall through to legacy implementation below
+        return await _execute_code_legacy(ws, arguments)
+
+    except Exception as e:
+        # Try fallback to legacy subprocess
+        import asyncio
+        try:
+            return await _execute_code_legacy(ws, arguments)
+        except Exception:
+            return f"❌ Execution error: {str(e)[:200]}"
+
+
+async def _execute_code_legacy(ws: Path, arguments: dict) -> str:
+    """Legacy subprocess-based code execution (fallback)."""
     import asyncio
 
     language = arguments.get("language", "python")
     code = arguments.get("code", "")
-    timeout = min(arguments.get("timeout", 30), 60)  # Max 60 seconds
+    timeout = min(arguments.get("timeout", 30), 60)
 
     if not code.strip():
         return "❌ No code provided"
