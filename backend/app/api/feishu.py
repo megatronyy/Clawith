@@ -1022,90 +1022,19 @@ async def _download_post_images(agent_id, config, message_id, image_keys):
 
 async def _call_agent_llm(db: AsyncSession, agent_id: uuid.UUID, user_text: str, history: list[dict] | None = None, user_id=None, on_chunk=None, on_thinking=None) -> str:
     """Call the agent's configured LLM model with conversation history.
-    
-    Reuses the same call_llm function as the WebSocket chat endpoint so that
-    all providers (OpenRouter, Qwen, etc.) work identically on both channels.
+
+    DEPRECATED: Use app.services.llm_caller.call_agent_llm instead.
+    This function is kept for backward compatibility with existing imports.
     """
-    from app.models.agent import Agent
-    from app.models.llm import LLMModel
-    from app.api.websocket import call_llm
-
-    # Load agent and model
-    agent_result = await db.execute(select(Agent).where(Agent.id == agent_id))
-    agent = agent_result.scalar_one_or_none()
-    if not agent:
-        return "⚠️ 数字员工未找到"
-
-    if is_agent_expired(agent):
-        return "This Agent has expired and is off duty. Please contact your admin to extend its service."
-
-    # Load primary model
-    model = None
-    if agent.primary_model_id:
-        model_result = await db.execute(select(LLMModel).where(LLMModel.id == agent.primary_model_id))
-        model = model_result.scalar_one_or_none()
-
-    # Load fallback model
-    fallback_model = None
-    if agent.fallback_model_id:
-        fb_result = await db.execute(select(LLMModel).where(LLMModel.id == agent.fallback_model_id))
-        fallback_model = fb_result.scalar_one_or_none()
-
-    # Config-level fallback: primary missing -> use fallback
-    if not model and fallback_model:
-        model = fallback_model
-        fallback_model = None
-        logger.warning(f"[Channel] Primary model unavailable, using fallback: {model.model}")
-
-    if not model:
-        return f"⚠️ {agent.name} 未配置 LLM 模型，请在管理后台设置。"
-
-    # Build conversation messages (without system prompt — call_llm adds it)
-    messages: list[dict] = []
-    if history:
-        messages.extend(history[-10:])
-    messages.append({"role": "user", "content": user_text})
-
-    # Use actual user_id so the system prompt knows who it's chatting with
-    effective_user_id = user_id or agent_id
-
-    try:
-        reply = await call_llm(
-            model,
-            messages,
-            agent.name,
-            agent.role_description or "",
-            agent_id=agent_id,
-            user_id=effective_user_id,
-            supports_vision=getattr(model, 'supports_vision', False),
-            on_chunk=on_chunk,
-            on_thinking=on_thinking,
-        )
-        return reply
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        error_msg = str(e) or repr(e)
-        logger.error(f"[LLM] Primary model error: {error_msg}")
-        # Runtime fallback: primary model failed -> retry with fallback model
-        if fallback_model:
-            logger.info(f"[LLM] Retrying with fallback model: {fallback_model.model}")
-            try:
-                reply = await call_llm(
-                    fallback_model,
-                    messages,
-                    agent.name,
-                    agent.role_description or "",
-                    agent_id=agent_id,
-                    user_id=effective_user_id,
-                    supports_vision=getattr(fallback_model, 'supports_vision', False),
-                    on_chunk=on_chunk,
-                    on_thinking=on_thinking,
-                )
-                return reply
-            except Exception as e2:
-                traceback.print_exc()
-                return f"⚠️ 调用模型出错: Primary: {str(e)[:80]} | Fallback: {str(e2)[:80]}"
-        return f"⚠️ 调用模型出错: {error_msg[:150]}"
+    from app.services.llm_caller import call_agent_llm
+    return await call_agent_llm(
+        db=db,
+        agent_id=agent_id,
+        user_text=user_text,
+        history=history,
+        user_id=user_id,
+        on_chunk=on_chunk,
+        on_thinking=on_thinking,
+    )
 
 

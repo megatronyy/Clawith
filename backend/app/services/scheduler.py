@@ -60,85 +60,22 @@ async def _execute_schedule(schedule_id: uuid.UUID, agent_id: uuid.UUID, instruc
                 logger.warning(f"Schedule {schedule_id}: LLM model {model_id} not found")
                 return
 
-            # Build context and call LLM
+            # Build context and call LLM with failover support
             from app.services.agent_context import build_agent_context
-            from app.services.agent_tools import execute_tool, get_agent_tools_for_llm
-            from app.services.llm_utils import create_llm_client, get_max_tokens, LLMMessage, LLMError
+            from app.services.llm_caller import call_agent_llm_with_tools
 
             system_prompt = await build_agent_context(agent_id, agent.name, agent.role_description or "")
 
-            messages = [
-                LLMMessage(role="system", content=system_prompt),
-                LLMMessage(role="user", content=f"[自动调度任务] {instruction}"),
-            ]
+            user_prompt = f"[自动调度任务] {instruction}"
 
-            # Load tools dynamically from DB (respects per-agent config and MCP tools)
-            tools_for_llm = await get_agent_tools_for_llm(agent_id)
-
-            # Create unified LLM client
-            try:
-                client = create_llm_client(
-                    provider=model.provider,
-                    api_key=model.api_key_encrypted,
-                    model=model.model,
-                    base_url=model.base_url,
-                    timeout=120.0,
-                )
-            except Exception as e:
-                logger.error(f"Schedule {schedule_id}: Failed to create LLM client: {e}")
-                return
-
-            # Tool-calling loop (max 50 rounds for scheduled tasks)
-            reply = ""
-            for round_i in range(50):
-                try:
-                    response = await client.complete(
-                        messages=messages,
-                        tools=tools_for_llm if tools_for_llm else None,
-                        temperature=0.7,
-                        max_tokens=get_max_tokens(model.provider, model.model, getattr(model, 'max_output_tokens', None)),
-                    )
-                except LLMError as e:
-                    logger.error(f"Schedule {schedule_id}: LLM error: {e}")
-                    reply = f"(LLM 错误: {e})"
-                    break
-                except Exception as e:
-                    logger.error(f"Schedule {schedule_id}: LLM call error: {e}")
-                    reply = f"(LLM 调用异常: {str(e)[:200]})"
-                    break
-
-                if response.tool_calls:
-                    # Add assistant message with tool calls
-                    messages.append(LLMMessage(
-                        role="assistant",
-                        content=response.content or None,
-                        tool_calls=[{
-                            "id": tc["id"],
-                            "type": "function",
-                            "function": tc["function"],
-                        } for tc in response.tool_calls],
-                        reasoning_content=response.reasoning_content,
-                    ))
-
-                    for tc in response.tool_calls:
-                        fn = tc["function"]
-                        try:
-                            args = json.loads(fn["arguments"]) if fn.get("arguments") else {}
-                        except Exception:
-                            args = {}
-                        tool_result = await execute_tool(fn["name"], args, agent_id, agent.creator_id)
-                        messages.append(LLMMessage(
-                            role="tool",
-                            tool_call_id=tc["id"],
-                            content=str(tool_result),
-                        ))
-                else:
-                    reply = response.content or ""
-                    break
-            else:
-                reply = "(已达到最大工具调用轮数)"
-
-            await client.close()
+            # Call LLM with unified failover support
+            reply = await call_agent_llm_with_tools(
+                db=db,
+                agent_id=agent_id,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_rounds=50,
+            )
 
             # Log activity
             from app.services.activity_logger import log_activity

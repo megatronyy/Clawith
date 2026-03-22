@@ -78,7 +78,7 @@ async def execute_task(task_id: uuid.UUID, agent_id: uuid.UUID) -> None:
 
     # Step 3: Build full agent context (same as chat dialog)
     from app.services.agent_context import build_agent_context
-    system_prompt = await build_agent_context(agent_id, agent_name, agent.role_description or "")
+    system_prompt = await build_agent_context(agent_id, agent.name, agent.role_description or "")
 
     # Add task-execution-specific instructions
     task_addendum = """
@@ -110,101 +110,29 @@ You are now in TASK EXECUTION MODE (not a conversation). A task has been assigne
             user_prompt += f"\n任务描述: {task_description}"
         user_prompt += "\n\n请认真完成此任务，给出详细的执行结果。"
 
-    # Step 4: Call LLM with tool loop
-    from app.services.llm_utils import create_llm_client, get_max_tokens, LLMMessage, LLMError
-
-    messages = [
-        LLMMessage(role="system", content=system_prompt),
-        LLMMessage(role="user", content=user_prompt),
-    ]
-
-    # Normalize base_url
-    if not model.base_url:
-        await _log_error(task_id, f"未配置 {model.provider} 的 API 地址")
-        if task_type == 'supervision':
-            await _restore_supervision_status(task_id)
-        return
-
-    # Create unified LLM client
-    try:
-        client = create_llm_client(
-            provider=model.provider,
-            api_key=model.api_key_encrypted,
-            model=model.model,
-            base_url=model.base_url,
-            timeout=1200.0,
-        )
-    except Exception as e:
-        await _log_error(task_id, f"创建 LLM 客户端失败: {e}")
-        if task_type == 'supervision':
-            await _restore_supervision_status(task_id)
-        return
-
-    # Load tools (same as chat dialog)
-    from app.services.agent_tools import execute_tool, get_agent_tools_for_llm
-    tools_for_llm = await get_agent_tools_for_llm(agent_id)
+    # Step 4: Call LLM with unified failover support
+    from app.services.llm_caller import call_agent_llm_with_tools
 
     try:
         logger.info(f"[TaskExec] Calling LLM with tools for task: {task_title}")
-        reply = ""
 
-        # Tool-calling loop (max 50 rounds for task execution)
-        for round_i in range(50):
-            try:
-                response = await client.complete(
-                    messages=messages,
-                    tools=tools_for_llm if tools_for_llm else None,
-                    temperature=0.7,
-                    max_tokens=get_max_tokens(model.provider, model.model, getattr(model, 'max_output_tokens', None)),
-                )
-            except LLMError as e:
-                await _log_error(task_id, f"LLM 错误: {e}")
-                if task_type == 'supervision':
-                    await _restore_supervision_status(task_id)
-                return
-            except Exception as e:
-                await _log_error(task_id, f"调用模型失败: {str(e)[:200]}")
-                if task_type == 'supervision':
-                    await _restore_supervision_status(task_id)
-                return
+        reply = await call_agent_llm_with_tools(
+            db=db,  # Use existing session
+            agent_id=agent_id,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_rounds=50,
+        )
 
-            if response.tool_calls:
-                # Add assistant message with tool calls
-                messages.append(LLMMessage(
-                    role="assistant",
-                    content=response.content or None,
-                    tool_calls=[{
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": tc["function"],
-                    } for tc in response.tool_calls],
-                    reasoning_content=response.reasoning_content,
-                ))
+        if reply.startswith("⚠️") or reply.startswith("[Error]"):
+            # LLM call failed (both primary and fallback)
+            await _log_error(task_id, f"LLM 调用失败: {reply}")
+            if task_type == 'supervision':
+                await _restore_supervision_status(task_id)
+            return
 
-                for tc in response.tool_calls:
-                    fn = tc["function"]
-                    tool_name = fn["name"]
-                    raw_args = fn.get("arguments", "{}")
-                    logger.info(f"[TaskExec] Round {round_i+1} calling tool: {tool_name}({json.dumps(raw_args, ensure_ascii=False)[:100]})")
-                    try:
-                        args = json.loads(raw_args) if raw_args else {}
-                    except Exception:
-                        args = {}
-
-                    tool_result = await execute_tool(tool_name, args, agent_id, creator_id)
-                    messages.append(LLMMessage(
-                        role="tool",
-                        tool_call_id=tc["id"],
-                        content=str(tool_result),
-                    ))
-            else:
-                reply = response.content or ""
-                break
-        else:
-            reply = "(已达到最大工具调用轮数)"
-
-        await client.close()
         logger.info(f"[TaskExec] LLM reply: {reply[:80]}")
+
     except Exception as e:
         error_msg = str(e) or repr(e)
         logger.error(f"[TaskExec] Error: {error_msg}")

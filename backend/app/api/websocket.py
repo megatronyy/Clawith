@@ -107,14 +107,73 @@ async def call_llm(
     on_tool_call=None,
     on_thinking=None,
     supports_vision=False,
+    fallback_model: LLMModel | None = None,
 ) -> str:
-    """Call LLM via unified client with function-calling tool loop.
+    """Call LLM via unified client with function-calling tool loop and failover support.
 
     Args:
         on_chunk: Optional async callback(text: str) for streaming chunks to client.
         on_thinking: Optional async callback(text: str) for reasoning/thinking content.
         on_tool_call: Optional async callback(dict) for tool call status updates.
+        fallback_model: Optional fallback model for runtime failover.
     """
+    from app.services.llm_failover import classify_error, FailoverErrorType
+
+    async def _call_single(_model: LLMModel) -> str:
+        """Internal: call a single model without failover."""
+        return await _call_llm_core(
+            _model, messages, agent_name, role_description,
+            agent_id, user_id, on_chunk, on_tool_call, on_thinking, supports_vision
+        )
+
+    # Config-level fallback: if no primary, use fallback directly
+    if model is None and fallback_model is not None:
+        model = fallback_model
+        fallback_model = None
+
+    if model is None:
+        return "⚠️ 未配置 LLM 模型"
+
+    # Try primary model
+    try:
+        return await _call_single(model)
+    except Exception as e:
+        error_type = classify_error(e)
+        error_msg = str(e) or repr(e)
+        logger.warning(f"[call_llm] Primary failed ({error_type.value}): {error_msg[:150]}")
+
+        # Non-retryable: don't attempt fallback
+        if error_type == FailoverErrorType.NON_RETRYABLE:
+            return f"[LLM Error] {error_msg}"
+
+        # No fallback available
+        if fallback_model is None:
+            return f"[LLM Error] {error_msg}"
+
+        # Runtime fallback: retry with fallback model
+        logger.info(f"[call_llm] Retrying with fallback: {fallback_model.provider}/{fallback_model.model}")
+        try:
+            return await _call_single(fallback_model)
+        except Exception as e2:
+            error_msg2 = str(e2) or repr(e2)
+            logger.error(f"[call_llm] Fallback also failed: {error_msg2[:150]}")
+            return f"⚠️ 调用模型出错: Primary: {error_msg[:80]} | Fallback: {error_msg2[:80]}"
+
+
+
+async def _call_llm_core(
+    model: LLMModel,
+    messages: list[dict],
+    agent_name: str,
+    role_description: str,
+    agent_id=None,
+    user_id=None,
+    on_chunk=None,
+    on_tool_call=None,
+    on_thinking=None,
+    supports_vision=False,
+) -> str:
+    """Core LLM call implementation (single model, no failover)."""
     from app.services.agent_tools import AGENT_TOOLS, execute_tool, get_agent_tools_for_llm
     from app.services.llm_utils import create_llm_client, get_max_tokens, LLMMessage, LLMError
 
@@ -217,7 +276,7 @@ async def call_llm(
             timeout=120.0,
         )
     except Exception as e:
-        return f"[Error] Failed to create LLM client: {e}"
+        raise LLMError(f"Failed to create LLM client: {e}")
 
     max_tokens = get_max_tokens(model.provider, model.model, getattr(model, 'max_output_tokens', None))
 
@@ -258,14 +317,15 @@ async def call_llm(
                 on_thinking=on_thinking,
             )
         except LLMError as e:
-            # Record accumulated tokens before returning error
+            # Record accumulated tokens before raising
             logger.error(
                 f"[LLM] LLMError provider={getattr(model, 'provider', '?')} "
                 f"model={getattr(model, 'model', '?')} round={round_i + 1}: {e}"
             )
             if agent_id and _accumulated_tokens > 0:
                 await record_token_usage(agent_id, _accumulated_tokens)
-            return f"[LLM Error] {e}"
+            await client.close()
+            raise  # Re-raise for failover handling
         except Exception as e:
             logger.error(
                 f"[LLM] Unexpected error provider={getattr(model, 'provider', '?')} "
@@ -274,7 +334,8 @@ async def call_llm(
             )
             if agent_id and _accumulated_tokens > 0:
                 await record_token_usage(agent_id, _accumulated_tokens)
-            return f"[LLM call error] {type(e).__name__}: {str(e)[:200]}"
+            await client.close()
+            raise  # Re-raise for failover handling
 
         # ── Track tokens for this round ──
         real_tokens = extract_usage_tokens(response.usage)
@@ -377,7 +438,7 @@ async def call_llm(
     if agent_id and _accumulated_tokens > 0:
         await record_token_usage(agent_id, _accumulated_tokens)
     await client.close()
-    return "[Error] Too many tool call rounds"
+    raise LLMError("Too many tool call rounds")
 
 
 @router.websocket("/ws/chat/{agent_id}")
@@ -737,6 +798,7 @@ async def websocket_chat(
                         on_tool_call=tool_call_to_ws,
                         on_thinking=thinking_to_ws,
                         supports_vision=getattr(llm_model, 'supports_vision', False),
+                        fallback_model=fallback_llm_model,
                     ))
 
                     # Listen for abort while LLM is running
@@ -803,30 +865,8 @@ async def websocket_chat(
                     logger.error(f"[WS] LLM error: {e}")
                     import traceback
                     traceback.print_exc()
-                    # Runtime fallback: primary model failed -> retry with fallback model
-                    if fallback_llm_model:
-                        logger.info(f"[WS] Primary model failed, retrying with fallback: {fallback_llm_model.model}")
-                        try:
-                            await websocket.send_json({"type": "info", "content": f"Primary model error, switching to fallback model ({fallback_llm_model.model})..."})
-                            assistant_response = await call_llm(
-                                fallback_llm_model,
-                                conversation[-ctx_size:],
-                                agent_name,
-                                role_description,
-                                agent_id=agent_id,
-                                user_id=user_id,
-                                on_chunk=stream_to_ws,
-                                on_tool_call=tool_call_to_ws,
-                                on_thinking=thinking_to_ws,
-                                supports_vision=getattr(fallback_llm_model, 'supports_vision', False),
-                            )
-                            logger.info(f"[WS] Fallback LLM response: {assistant_response[:80]}")
-                        except Exception as e2:
-                            logger.error(f"[WS] Fallback LLM also failed: {e2}")
-                            traceback.print_exc()
-                            assistant_response = f"[LLM call error] Primary: {str(e)[:100]} | Fallback: {str(e2)[:100]}"
-                    else:
-                        assistant_response = f"[LLM call error] {str(e)[:200]}"
+                    # call_llm now handles failover internally, just return the error message
+                    assistant_response = str(e) if str(e) else "[LLM call error]"
             else:
                 assistant_response = f"⚠️ {agent_name} has no LLM model configured. Please select a model in the agent's Settings tab."
 
