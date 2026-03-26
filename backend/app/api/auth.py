@@ -38,7 +38,7 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(
         select(User).where((User.username == data.username) | (User.email == data.email))
     )
-    if existing.scalar_one_or_none():
+    if existing.scalars().first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username or email already exists")
 
     # Check if this is the first user (→ platform admin + default company org_admin)
