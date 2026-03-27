@@ -6313,7 +6313,7 @@ def _save_screenshot_to_workspace(agent_id: uuid.UUID, ws: Path, data) -> str:
     import time
     import base64
 
-    rel_path = f"workspace/desktop_screenshot_{int(time.time())}.png"
+    rel_path = f"workspace/desktop-screenshot-{int(time.time())}.png"
     screenshot_path = ws / rel_path
     screenshot_path.parent.mkdir(parents=True, exist_ok=True)
 
