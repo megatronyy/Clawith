@@ -671,14 +671,18 @@ function OrgTab({ tenant }: { tenant: any }) {
                                     <div style={{ padding: '0 20px 20px', background: 'var(--bg-secondary)' }}>
                                         {renderForm(idp.type, existingProvider)}
 
-                                        {/* Per-channel SSO Login toggle — only for configured providers */}
-                                        {existingProvider && ['feishu', 'dingtalk', 'wecom', 'oauth2'].includes(idp.type) && (() => {
-                                            const ssoEnabled = !!existingProvider.sso_login_enabled;
+                                        {/* Per-channel SSO Login URLs & Toggle */}
+                                        {['feishu', 'dingtalk', 'wecom', 'oauth2'].includes(idp.type) && (() => {
+                                            const ssoEnabled = existingProvider ? !!existingProvider.sso_login_enabled : false;
                                             const slug = tenant?.slug || '';
                                             const domain = tenant?.sso_domain || (slug ? `${slug}.clawith.ai` : '');
                                             const callbackUrl = domain ? `https://${domain}/api/auth/${idp.type}/callback` : '';
 
                                             const handleSsoToggle = async () => {
+                                                if (!existingProvider) {
+                                                    alert(t('enterprise.identity.saveFirst', 'Please save the configuration first to enable SSO.'));
+                                                    return;
+                                                }
                                                 const newVal = !ssoEnabled;
                                                 try {
                                                     await fetchJson(`/enterprise/identity-providers/${existingProvider.id}`, {
@@ -696,7 +700,7 @@ function OrgTab({ tenant }: { tenant: any }) {
                                             return (
                                                 <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px dashed var(--border-subtle)' }}>
                                                     {/* SSO Toggle */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: ssoEnabled ? '16px' : 0 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                                                         <div>
                                                             <div style={{ fontWeight: 500, fontSize: '13px' }}>{t('enterprise.identity.ssoLoginToggle', 'SSO Login')}</div>
                                                             <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
@@ -714,7 +718,8 @@ function OrgTab({ tenant }: { tenant: any }) {
                                                                 position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                                                                 borderRadius: '20px', cursor: 'pointer',
                                                                 background: ssoEnabled ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                                                                transition: '0.2s'
+                                                                transition: '0.2s',
+                                                                opacity: existingProvider ? 1 : 0.5
                                                             }}>
                                                                 <span style={{
                                                                     position: 'absolute', left: ssoEnabled ? '18px' : '2px', top: '2px',
@@ -726,9 +731,8 @@ function OrgTab({ tenant }: { tenant: any }) {
                                                         </label>
                                                     </div>
 
-                                                    {/* Callback URL & domain info — shown when SSO is enabled */}
-                                                    {ssoEnabled && (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    {/* Callback URL & domain info — always shown so users can configure it before saving */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                                             {/* Company subdomain */}
                                                             <div>
                                                                 <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px', color: 'var(--text-secondary)' }}>
@@ -793,7 +797,6 @@ function OrgTab({ tenant }: { tenant: any }) {
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    )}
                                                 </div>
                                             );
                                         })()}
