@@ -5139,7 +5139,14 @@ async def _generate_image_siliconflow(
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            # Extract API error message for better diagnostics
+            try:
+                err_body = resp.json()
+                err_msg = err_body.get("message") or err_body.get("error", {}).get("message", resp.text[:300])
+            except Exception:
+                err_msg = resp.text[:300]
+            raise ValueError(f"SiliconFlow API error ({resp.status_code}): {err_msg}")
         data = resp.json()
 
         # SiliconFlow may return url or b64_json
@@ -5180,7 +5187,13 @@ async def _generate_image_openai(
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            try:
+                err_body = resp.json()
+                err_msg = err_body.get("error", {}).get("message", resp.text[:300])
+            except Exception:
+                err_msg = resp.text[:300]
+            raise ValueError(f"OpenAI API error ({resp.status_code}): {err_msg}")
         data = resp.json()
 
         image_data = data.get("data", [{}])[0]
@@ -5224,7 +5237,13 @@ async def _generate_image_google(
         resp = await client.post(
             url, json=payload, headers={"Content-Type": "application/json"}
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            try:
+                err_body = resp.json()
+                err_msg = err_body.get("error", {}).get("message", resp.text[:300])
+            except Exception:
+                err_msg = resp.text[:300]
+            raise ValueError(f"Google Gemini API error ({resp.status_code}): {err_msg}")
         data = resp.json()
 
         # Extract image from response candidates -> content -> parts
