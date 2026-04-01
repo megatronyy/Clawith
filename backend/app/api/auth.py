@@ -91,7 +91,12 @@ async def _send_verification_email_task(
     db: AsyncSession,
 ) -> None:
     """Helper to create verification token and add email task to background tasks."""
-    if not settings.SYSTEM_SMTP_HOST or not settings.SYSTEM_EMAIL_FROM_ADDRESS:
+    # Check if email is configured — either via DB (platform settings UI) or env vars.
+    # We must check the DB config too, since most users configure SMTP via the UI.
+    from app.services.system_email_service import resolve_email_config_async
+    email_config = await resolve_email_config_async(db)
+    if not email_config:
+        logger.debug("No email config found (env or DB), skipping verification email")
         return
 
     from app.services.email_verification_service import email_verification_service
@@ -556,10 +561,10 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Request a password reset link for a global Identity."""
-    from app.config import get_settings
-    settings = get_settings()
+    from app.services.system_email_service import resolve_email_config_async
+    email_config = await resolve_email_config_async(db)
 
-    if not settings.SYSTEM_SMTP_HOST or not settings.SYSTEM_EMAIL_FROM_ADDRESS:
+    if not email_config:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password reset is currently unavailable (no mail server configured)."
